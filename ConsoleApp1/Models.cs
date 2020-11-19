@@ -7,49 +7,6 @@ using System.Text;
 
 namespace ConsoleApp1
 {
-    public class Request1 { }
-
-    public class Request2
-    {
-        public object Result { get; set; }
-    }
-
-    public class Request3 { }
-
-    public class City
-    {
-        public string CITY_CODE { get; set; }
-        public string CITY_NAME { get; set; }
-        public string ZIP_CODE { get; set; }
-        public string AREA_CODE { get; set; }
-        public string AREA_NAME { get; set; }
-    }
-
-    public class Location
-    {
-        public string City { get; set; }
-        public string CityId { get; set; }
-        public string Code { get; set; }
-        public string ZipCode { get; set; }
-        public List<Districts> Districts { get; set; }
-    }
-
-    public class Districts
-    {
-        public string District { get; set; }
-        public string Code { get; set; }
-        public List<string> Wards { get; set; }
-    }
-
-    public class Person
-    {
-        public Guid Id { get; set; }
-        public string Name { get; set; }
-        public int Age { get; set; }
-        public double Longitude { get; set; }
-        public double Latitude { get; set; }
-    }
-
     public class RV
     {
         public Guid Id { get; set; }
@@ -275,11 +232,6 @@ namespace ConsoleApp1
     {
         public double lat { get; set; }
         public double lon { get; set; }
-    }
-
-    public class PcbResult
-    {
-
     }
 
     public enum InsuranceProfileState

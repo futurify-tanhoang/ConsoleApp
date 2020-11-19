@@ -10,7 +10,7 @@ namespace ConsoleApp1
     {
         private static string secretkey = "sk_test_tOWvifRqdRPGgXsxF9Cbu2dj00MK2lJ587";
 
-        public Customer GetCustomer(string id)
+        public Stripe.Customer GetCustomer(string id)
         {
             StripeConfiguration.ApiKey = secretkey;
             var customerService = new CustomerService();
@@ -22,7 +22,7 @@ namespace ConsoleApp1
             return customer;
         }
 
-        public Customer CreateCustomer(string fullName, string email, string token)
+        public Stripe.Customer CreateCustomer(string fullName, string email, string token)
         {
             StripeConfiguration.ApiKey = secretkey;
             var customerService = new CustomerService();
@@ -40,7 +40,7 @@ namespace ConsoleApp1
             return customer;
         }
 
-        public Customer UpdateCustomerCard(string id, string cardToken)
+        public Stripe.Customer UpdateCustomerCard(string id, string cardToken)
         {
             StripeConfiguration.ApiKey = secretkey;
             var customerService = new CustomerService();

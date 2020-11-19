@@ -7,6 +7,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -14,9 +15,13 @@ namespace ConsoleApp1
 {
     public static class Program
     {
-        static void Main(string[] args)
+        private const string _elasticsearchUrl = "https://search-aap-elasticsearch-oig44h344whlcn7s2ribqrrb4q.us-east-1.es.amazonaws.com";
+        private const string _elasticsearchIndexName = "aap-local";
+
+        private static void Main(string[] args)
         {
-            Stripe();
+            //InitDataElasticSearch();
+            //ElasticSearch();
 
             Console.WriteLine("Done!");
 
@@ -49,98 +54,61 @@ namespace ConsoleApp1
                     .ToDictionary(prop => prop.Name, prop => prop.GetValue(obj) == null ? "" : prop.GetValue(obj));
         }
 
-        public static void ElasticSearch()
+        private static void InitDataElasticSearch()
         {
-            var settings = new ConnectionSettings(new Uri("https://search-search-rvezy-sdxhps7oh6vgvoy7f3ctpxnh7q.us-east-2.es.amazonaws.com")).DefaultIndex("rv-local");
+            var settings = new ConnectionSettings(new Uri(_elasticsearchUrl)).DefaultIndex(_elasticsearchIndexName);
             var client = new ElasticClient(settings);
 
-            //client.DeleteIndexAsync("rv-local").Wait();
-            //return;
+            var products = ReadJsonFile<List<ProductElasticSearch>>("D:\\Work\\Personal\\ConsoleApp\\ConsoleApp1\\AAPProduct.json");
+            //var res = client.IndexDocument(products.First());
+            var res = client.IndexMany(products);
+            Console.WriteLine($"Index result: {res.DebugInformation}");
+        }
 
-            client.CreateIndex("rv-local", c => c.Mappings(mp => mp.Map<RV>(m => m.AutoMap())));
+        private static void DeleteIndexNameElasticSearch()
+        {
+            var settings = new ConnectionSettings(new Uri(_elasticsearchUrl)).DefaultIndex(_elasticsearchIndexName);
+            var client = new ElasticClient(settings);
 
-            var path = "D:\\Work\\Personal\\ConsoleApp\\ConsoleApp1\\rv.json";
-            var rvs = path.ReadJsonFile<List<RV>>();
-
-            var indexResponse = client.IndexMany(rvs);
+            var deleteRes = client.Indices.Delete(_elasticsearchIndexName);
             return;
+        }
+
+        public static void ElasticSearch()
+        {
+            var settings = new ConnectionSettings(new Uri(_elasticsearchUrl)).DefaultIndex(_elasticsearchIndexName);
+            var client = new ElasticClient(settings);
 
             QueryContainer queryContainer = null;
-            queryContainer &= new QueryContainerDescriptor<RV>().Match(c => c.Field(p => p.IsDeleted).Query(false.ToString().ToLower()));
-            queryContainer &= new QueryContainerDescriptor<RV>().Match(c => c.Field(p => p.IsPublish).Query(true.ToString().ToLower()));
-
-            queryContainer &= new QueryContainerDescriptor<RV>()
-                                   .Bool(b =>
-                                       b.Must(m =>
-                                           m.Bool(mb =>
-                                               mb.Filter(ft =>
-                                                   ft.Nested(nt =>
-                                                       nt.Path(np => np.ListAddOns)
-                                                           .Query(qr =>
-                                                               qr.Bool(qrb =>
-                                                                   qrb.Must(qrm =>
-                                                                       qrm.QueryString(q => q.DefaultField(d => d.ListAddOns[0].Name).Query("delivery"))
-                                                                       ))))))));
-
-            var scriptFields = new ScriptFields
-                {
-                    { "distance", new ScriptField
-                        {
-                            Script = new InlineScript(@"
-                                    double distance = doc['point'].arcDistance(params.lat, params.lon) * 0.001;
-                                    double score = doc['score'].value;
-                                    if(distance <= 30) { score += 4 }
-                                    if(distance > 30 && distance <= 100) { score += 3 }
-                                    if(distance > 100 && distance <= 250) { score += 2 }
-                                    return score;
-                                ")
-                            {
-                                Lang = "painless",
-                                Params = new FluentDictionary<string, object>
-                                {
-                                    { "lat", 45.517254 },
-                                    { "lon", -73.515305 }
-                                }
-                            }
-                        }
-                    },
-                    { "abc", new ScriptField
-                        {
-                            Script = new InlineScript("doc['point'].arcDistance(params.lat, params.lon) * 0.001")
-                            {
-                                Lang = "painless",
-                                Params = new FluentDictionary<string, object>
-                                {
-                                    { "lat", 45.517254 },
-                                    { "lon", -73.515305 }
-                                }
-                            }
-                        }
-                    }
-                };
+            //queryContainer &= new QueryContainerDescriptor<ProductElasticSearch>().Term(t => t.ParentGroupedProductId, 7423);
+            //queryContainer &= new QueryContainerDescriptor<ProductElasticSearch>().Term(t => t.ProductType, ProductType.SimpleProduct);
+            //queryContainer &= new QueryContainerDescriptor<ProductElasticSearch>().Range(r => r.Field(f => f.SpecialPrice).GreaterThanOrEquals(1));
+            queryContainer &= new QueryContainerDescriptor<ProductElasticSearch>()
+                                    .Bool(b => b.Must(m =>
+                                            m.Range(t => t.Field(f => f.SpecialPrice).GreaterThanOrEquals(0))
+                                            &&
+                                            m.Range(t => t.Field(f => f.SpecialPrice).LessThanOrEquals(20))
+                                    ));
 
             var searchRequest = new SearchRequest<RV>
             {
                 Query = queryContainer,
-                //ScriptFields = scriptFields,
-                //Source = new Union<bool, ISourceFilter>(true),
                 From = 0,
-                Size = 10,
-                //Sort = new List<ISort>
-                //    {
-                //        new SortField
-                //        {
-                //            Field = "score",
-                //            Order = SortOrder.Descending
-                //        }
-                //    }
+                Size = 20,
             };
 
             var json = client.RequestResponseSerializer.SerializeToString(searchRequest);
 
-            var searchResponse = client.Search<RV>(searchRequest);
+            var searchResponse = client.Search<ProductElasticSearch>(searchRequest);
+            Console.WriteLine($"Query result: {searchResponse.DebugInformation}\r\nNumber of document: {searchResponse.Documents.Count()}");
 
-            //var rvs = searchResponse.Documents;
+            var products = searchResponse.Documents;
+            var index = 1;
+            foreach (var product in products)
+            {
+                Console.WriteLine($"{index} Product name: {product.Name}");
+                index++;
+            }
             //foreach (var hit in searchResponse.Hits)
             //{
             //    var rv = hit.Source;
@@ -235,5 +203,156 @@ namespace ConsoleApp1
         {
             return value is T;
         }
+
+        /// <summary>
+        /// Hashing password with SHA-1 algorithm
+        /// </summary>
+        /// <param name="password">String to be hashed</param>
+        /// <returns>40-character hex string</returns>
+        private static string SHA1HashPassword(this string password)
+        {
+            if (string.IsNullOrEmpty(password)) { return null; }
+
+            byte[] bytes = Encoding.UTF8.GetBytes(password);
+
+            var sha1 = SHA1.Create();
+            byte[] hashBytes = sha1.ComputeHash(bytes);
+
+            return HexStringFromBytes(hashBytes);
+        }
+
+        /// <summary>
+        /// Convert an array of bytes to a string of hex digits
+        /// </summary>
+        /// <param name="bytes">array of bytes</param>
+        /// <returns>String of hex digits</returns>
+        private static string HexStringFromBytes(byte[] bytes)
+        {
+            var sb = new StringBuilder();
+            foreach (byte b in bytes)
+            {
+                var hex = b.ToString("x2");
+                sb.Append(hex);
+            }
+            return sb.ToString();
+        }
+
+        // Return start day of week - Monday is first day of week
+        public static DateTime GetStartTime(GoalFrequency type)
+        {
+            var res = new DateTime();
+
+            var today = DateTime.Now;
+            if (type == GoalFrequency.Weekly)
+            {
+                res = new DateTime(today.Year, today.Month, today.Day, 0, 0, 0);
+                switch (today.DayOfWeek)
+                {
+                    case DayOfWeek.Monday:
+                        res = res.AddDays(-1);
+                        break;
+
+                    case DayOfWeek.Tuesday:
+                        res = res.AddDays(-2);
+                        break;
+
+                    case DayOfWeek.Wednesday:
+                        res = res.AddDays(-3);
+                        break;
+
+                    case DayOfWeek.Thursday:
+                        res = res.AddDays(-4);
+                        break;
+
+                    case DayOfWeek.Friday:
+                        res = res.AddDays(-5);
+                        break;
+
+                    case DayOfWeek.Saturday:
+                        res = res.AddDays(-6);
+                        break;
+                }
+            }
+            else if (type == GoalFrequency.Monthly)
+            {
+                res = new DateTime(today.Year, today.Month, 1, 0, 0, 0);
+            }
+            else
+            {
+                res = new DateTime(today.Year, today.Month, 1, 0, 0, 0);
+                switch (today.Month % 3)
+                {
+                    case 0:
+                        res = res.AddMonths(-2);
+                        break;
+
+                    case 2:
+                        res = res.AddMonths(-1);
+                        break;
+                }
+            }
+
+            return res;
+        }
+
+        // Return last day of week - Sunday is last day of week
+        public static DateTime GetEndTime(GoalFrequency type)
+        {
+            var res = new DateTime();
+
+            var today = DateTime.Now;
+            if (type == GoalFrequency.Weekly)
+            {
+                res = new DateTime(today.Year, today.Month, today.Day, 0, 0, 0);
+                switch (today.DayOfWeek)
+                {
+                    case DayOfWeek.Sunday:
+                        res = res.AddDays(7);
+                        break;
+
+                    case DayOfWeek.Monday:
+                        res = res.AddDays(6);
+                        break;
+
+                    case DayOfWeek.Tuesday:
+                        res = res.AddDays(5);
+                        break;
+
+                    case DayOfWeek.Wednesday:
+                        res = res.AddDays(4);
+                        break;
+
+                    case DayOfWeek.Thursday:
+                        res = res.AddDays(3);
+                        break;
+
+                    case DayOfWeek.Friday:
+                        res = res.AddDays(2);
+                        break;
+                }
+            }
+            else if (type == GoalFrequency.Monthly)
+            {
+                res = new DateTime(today.Year, today.Month + 1, 1, 0, 0, 0);
+            }
+            else
+            {
+                res = new DateTime(today.Year, today.Month, 1, 0, 0, 0);
+                switch (today.Month % 3)
+                {
+                    case 1:
+                        res = res.AddMonths(3);
+                        break;
+
+                    case 2:
+                        res = res.AddMonths(2);
+                        break;
+                }
+            }
+
+            return res.AddSeconds(-1);
+        }
     }
+
+    public enum GoalFrequency { Weekly, Monthly, Quarterly }
 }
